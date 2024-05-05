@@ -3,6 +3,10 @@ import * as THREE from 'three';
 export class SceneSetup {
     constructor() {
         this.scene = new THREE.Scene();
+
+        const loader = new THREE.TextureLoader();
+        this.scene.background = loader.load('/Sky_hr_aztec_02_lighting.png');
+
         this.renderer = new THREE.WebGLRenderer();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;

@@ -19,6 +19,7 @@ const renderer = sceneSetup.renderer;
 const cameraSetup = new CameraSetup(scene);
 const camera = cameraSetup.camera;
 const lightSetup = new LightSetup(scene);
+const textureLoader = new THREE.TextureLoader();
 
 function loadLevel() {
     // Clear the previous level
@@ -58,25 +59,20 @@ function createBlocks(level) {
 
 
         if (data.type === 'start') {
-            material = new THREE.MeshStandardMaterial ({ color: 0x00ff00 });
+            material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
 
         } else if (data.type === 'finish') {
-            material = new THREE.MeshStandardMaterial ({ color: 0xffffff });
+            material = new THREE.MeshStandardMaterial({ color: 0xffffff });
         } else if (data.type === 'solid') {
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
+            // Load the texture from the PNG image
+            const texture = textureLoader.load(`${data.amount}.png`);
 
-            // Set the background color to purple
-            context.fillStyle = 'purple';
-            context.fillRect(0, 0, canvas.width, canvas.height);
-
-            context.fillStyle = 'white'; // Set the text color to white
-            context.font = '100px bold Arial'; // Set the font size and style
-            context.fillText((data.amount).toString(), canvas.width / 2, canvas.height / 2);
-
-            // Use the canvas as a texture
-            const texture = new THREE.CanvasTexture(canvas);
-            material = new THREE.MeshStandardMaterial ({ map: texture });
+            // Create the material with the texture and a color underneath it
+            material = new THREE.MeshBasicMaterial({
+                map: texture, // Apply the texture
+                color: '#7becec', // Set the color underneath the texture
+                transparent: false, // Enable transparency
+            });
         }
 
         cube = new THREE.Mesh(geometry, material);
@@ -106,7 +102,7 @@ function handleMoveOntoBlock(block, prevBlock) {
 
     block.userData.touchedCount++; // Increment the touchedCount property of the block
 
-    if (block.userData.type === 'solid') {
+    
         new TWEEN.Tween(block.position)
             .to({ y: block.position.y - 0.2 }, 200) // Move the block down by 0.2 units over 500 milliseconds
             .easing(TWEEN.Easing.Quadratic.Out) // Use quadratic easing for a smooth animation
@@ -117,24 +113,14 @@ function handleMoveOntoBlock(block, prevBlock) {
                     .start();
             })
             .start();
+            if (block.userData.type === 'solid') {
+        const texture = textureLoader.load(`${block.userData.amount - block.userData.touchedCount}.png`);
 
-        // Create a new canvas and context
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-
-        // Draw the background
-        context.fillStyle = 'purple';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Draw the text
-        const text = (block.userData.amount - block.userData.touchedCount);
-        context.fillStyle = 'white';
-        context.font = '100px Inter';
-        text > 0 && context.fillText(text.toString(), canvas.width / 4, canvas.height / 2)
-
-
-        // Create a new texture from the canvas and set it as the map of the block's material
-        block.material.map = new THREE.CanvasTexture(canvas);
+        block.material = new THREE.MeshBasicMaterial({
+            map: texture, // Apply the texture
+            color: '#1becec', // Set the color underneath the texture
+            transparent: false, // Enable transparency
+        });;
         block.material.map.needsUpdate = true;
     }
 }
