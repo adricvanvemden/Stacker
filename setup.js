@@ -13,9 +13,9 @@ export class SceneSetup {
 export class CameraSetup {
     constructor(scene) {
         const aspect = window.innerWidth / window.innerHeight;
-        const d = 4;
-        this.camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
-        this.camera.position.set(d, d, d);
+        this.d = 4;
+        this.camera = new THREE.OrthographicCamera(-this.d * aspect, this.d * aspect, this.d, -this.d, 1, 1000);
+        this.camera.position.set(this.d, this.d, this.d);
         this.camera.lookAt(scene.position);
     }
 }

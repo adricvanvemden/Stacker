@@ -13,6 +13,44 @@
             width: 100%;
             height: 100%;
         }
+
+        #overlay {
+            display: flex;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.8);
+            /* Make the background darker */
+            color: white;
+            /* Make the text color white */
+        }
+
+
+        #overlay button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 1.2em;
+            color: white;
+            background-color: #007BFF;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #overlay button:hover {
+            background-color: #0056b3;
+        }
+
+        #info {
+            font-size: 2em;
+            font-weight: bold;
+        }
     </style>
     <script type="importmap">
         {
@@ -27,10 +65,10 @@
 <body>
     <script type="module" src='script.js'>
     </script>
-    <div id="overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; justify-content: center; align-items: center; flex-direction: column; background: rgba(0, 0, 0, 0.5);">
-        <button id="nextLevelButton" type="submit">Next Level</button>
-        <button id="gameOverButton" type="submit" style="display: none;">Game over</button>
-        <p id="levelCompleteText">You completed the level!</p>
+    <div id="overlay"
+        style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; justify-content: center; align-items: center; flex-direction: column; background: rgba(0, 0, 0, 0.5);">
+        <p id="info">You completed the level!</p>
+        <button id="button" type="submit">Next Level</button>
     </div>
 </body>
 

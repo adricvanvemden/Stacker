@@ -9,9 +9,8 @@ let level = 0;
 let currentLevel = levels[level];
 
 let overlay = document.getElementById('overlay');
-let nextLevelButton = document.getElementById('nextLevelButton');
-let gameOverButton = document.getElementById('gameOverButton');
-let levelCompleteText = document.getElementById('levelCompleteText');
+let button = document.getElementById('button');
+let info = document.getElementById('info');
 
 // Initialize Three.js
 const sceneSetup = new SceneSetup();
@@ -174,10 +173,10 @@ function onWindowResize() {
     const aspect = window.innerWidth / window.innerHeight;
 
     // Update the camera's properties
-    camera.left = -d * aspect;
-    camera.right = d * aspect;
-    camera.top = d;
-    camera.bottom = -d;
+    camera.left = -cameraSetup.d * aspect;
+    camera.right = cameraSetup.d * aspect;
+    camera.top = cameraSetup.d;
+    camera.bottom = -cameraSetup.d;
     camera.updateProjectionMatrix();
 
     // Update the renderer's size
@@ -215,16 +214,14 @@ function reset() {
 }
 
 function gameOver() {
-    nextLevelButton.style.display = 'none';
     // Remove the existing event listener before adding a new one
-    gameOverButton.removeEventListener('click', () => { reset(); lockGame = false; });
-    gameOverButton.addEventListener('click', () => { reset(); lockGame = false; });
-    gameOverButton.innerText = 'Restart';
-    gameOverButton.style.display = 'block';
+    button.removeEventListener('click', () => { reset(); lockGame = false; });
+    button.addEventListener('click', () => { reset(); lockGame = false; });
+    button.innerText = 'Restart';
 
     // Show the game over message
     overlay.style.display = 'flex';
-    levelCompleteText.innerText = 'Game Over!';
+    info.innerText = 'Game Over!';
 }
 
 function isLevelFinished(block) {
@@ -255,16 +252,14 @@ function shouldUpdatePlayerPosition() {
 
     if (!lockGame) {
         if (complete) {
-            gameOverButton.style.display = 'none';
-            nextLevelButton.style.display = 'block';
             lockGame = true;
             // Remove the existing event listener before adding a new one
-            nextLevelButton.removeEventListener('click', () => { loadLevel(); lockGame = false; });
-            nextLevelButton.addEventListener('click', () => { loadLevel(); lockGame = false; });
+            button.removeEventListener('click', () => { loadLevel(); lockGame = false; });
+            button.addEventListener('click', () => { loadLevel(); lockGame = false; });
 
             // Show the overlay when all blocks are gone
             overlay.style.display = 'flex';
-            levelCompleteText.innerText = 'Level Complete!';
+            info.innerText = 'Level Complete!';
         } else if (!complete && !canMove(currentBlock)) {
             lockGame = true;
             gameOver();
