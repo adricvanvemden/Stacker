@@ -1,50 +1,48 @@
 import * as THREE from 'three';
 import { TWEEN } from 'https://unpkg.com/three@0.139.0/examples/jsm/libs/tween.module.min.js';
 import { level1, level2, level3, level4 } from './levels.js';
+import { SceneSetup, CameraSetup, LightSetup } from './setup.js';
+import { Player } from './player.js';
 
-const levels = { level1, level2, level3, level4 };
-let level = 'level1';
-let currentLevel = level1;
+const levels = [level1, level2, level3, level4];
+let level = 0;
+let currentLevel = levels[level];
 
 let overlay = document.getElementById('overlay');
 let nextLevelButton = document.getElementById('nextLevelButton');
+let gameOverButton = document.getElementById('gameOverButton');
 let levelCompleteText = document.getElementById('levelCompleteText');
 
-let nextLevel = null;
-
-function loadNextLevel() {
-    if (nextLevel) {
-        loadLevel(nextLevel);
-    }
-}
-
 // Initialize Three.js
-const scene = new THREE.Scene();
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+const sceneSetup = new SceneSetup();
+const scene = sceneSetup.scene;
+const renderer = sceneSetup.renderer;
+const cameraSetup = new CameraSetup(scene);
+const camera = cameraSetup.camera;
+const lightSetup = new LightSetup(scene);
 
-// Create isometric projection
-const aspect = window.innerWidth / window.innerHeight;
-const d = 4;
-const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
-camera.position.set(d, d, d); // all components equal
-camera.lookAt(scene.position); // or the origin
-
-
-function loadLevel(level) {
+function loadLevel() {
     // Clear the previous level
     for (let i = scene.children.length - 1; i >= 0; i--) {
         if (scene.children[i].userData.type) {
             scene.remove(scene.children[i]);
         }
     }
-    console.log('loadLevel', level);
-    currentLevel = level;
-    overlay.style.display = 'none';
 
-    createBlocks(level);
-    toStart();
+    // Check if there are more levels
+    if (level < levels.length) {
+        // Increment level to move on to the next level
+        level++;
+        const newLevel = levels[level];
+        console.log('loadLevel', newLevel);
+        currentLevel = newLevel;
+        overlay.style.display = 'none';
+
+        createBlocks(currentLevel);
+        player.toStart(currentLevel);
+    } else {
+        console.log('No more levels');
+    }
 }
 
 // Create grid of blocks
@@ -61,10 +59,10 @@ function createBlocks(level) {
 
 
         if (data.type === 'start') {
-            material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            material = new THREE.MeshStandardMaterial ({ color: 0x00ff00 });
 
         } else if (data.type === 'finish') {
-            material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            material = new THREE.MeshStandardMaterial ({ color: 0xffffff });
         } else if (data.type === 'solid') {
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
@@ -79,7 +77,7 @@ function createBlocks(level) {
 
             // Use the canvas as a texture
             const texture = new THREE.CanvasTexture(canvas);
-            material = new THREE.MeshBasicMaterial({ map: texture });
+            material = new THREE.MeshStandardMaterial ({ map: texture });
         }
 
         cube = new THREE.Mesh(geometry, material);
@@ -88,6 +86,8 @@ function createBlocks(level) {
         cube.userData.amount = data.amount;
         cube.userData.touchedCount = 0;
         cube.userData.type = data.type;
+        cube.castShadow = true;
+        cube.receiveShadow = true;
         scene.add(cube);
 
 
@@ -109,15 +109,15 @@ function handleMoveOntoBlock(block, prevBlock) {
 
     if (block.userData.type === 'solid') {
         new TWEEN.Tween(block.position)
-        .to({ y: block.position.y - 0.2 }, 200) // Move the block down by 0.2 units over 500 milliseconds
-        .easing(TWEEN.Easing.Quadratic.Out) // Use quadratic easing for a smooth animation
-        .onComplete(() => {
-            // Move the block back up when the animation is complete
-            new TWEEN.Tween(block.position)
-                .to({ y: block.position.y + 0.2 }, 200)
-                .start();
-        })
-        .start();
+            .to({ y: block.position.y - 0.2 }, 200) // Move the block down by 0.2 units over 500 milliseconds
+            .easing(TWEEN.Easing.Quadratic.Out) // Use quadratic easing for a smooth animation
+            .onComplete(() => {
+                // Move the block back up when the animation is complete
+                new TWEEN.Tween(block.position)
+                    .to({ y: block.position.y + 0.2 }, 200)
+                    .start();
+            })
+            .start();
 
         // Create a new canvas and context
         const canvas = document.createElement('canvas');
@@ -166,57 +166,6 @@ async function handleMoveOffBlock(block) {
     }
 }
 
-// Add player
-const playerGeometry = new THREE.SphereGeometry(0.5, 32, 32);
-const playerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-const player = new THREE.Mesh(playerGeometry, playerMaterial);
-
-scene.add(player);
-
-function setPlayerPosition(x, z) {
-    player.position.set(x, 0.5, z);
-}
-
-function toStart() {
-    // Find the start block
-    for (let i = 0; i < currentLevel.length; i++) {
-        let data = currentLevel[i];
-        if (data.type === 'start') {
-            // Position the player on top of the start block
-            setPlayerPosition(data.xpos, data.zpos);
-            break;
-        }
-    }
-}
-
-// Add event listener for keydown events
-document.addEventListener('keydown', function (event) {
-    let x = Math.round(player.position.x);
-    let z = Math.round(player.position.z);
-    switch (event.key) {
-        case 'w':
-            if (blocks[x] && blocks[x][z - 1]) {
-                player.position.z -= 1;
-            }
-            break;
-        case 'a':
-            if (blocks[x - 1] && blocks[x - 1][z]) {
-                player.position.x -= 1;
-            }
-            break;
-        case 's':
-            if (blocks[x] && blocks[x][z + 1]) {
-                player.position.z += 1;
-            }
-            break;
-        case 'd':
-            if (blocks[x + 1] && blocks[x + 1][z]) {
-                player.position.x += 1;
-            }
-            break;
-    }
-});
-
 // Add an event listener for the window's resize event
 window.addEventListener('resize', onWindowResize, false);
 
@@ -248,7 +197,31 @@ function canMove(block) {
     return false;;
 }
 
+function reset() {
+    console.log('reset');
+    // Clear the previous level
+    for (let i = scene.children.length - 1; i >= 0; i--) {
+        if (scene.children[i].userData.type) {
+            scene.remove(scene.children[i]);
+        }
+    }
+
+    // Reset the current level
+    currentLevel = levels[level];
+    overlay.style.display = 'none';
+
+    createBlocks(currentLevel);
+    player.toStart(currentLevel);
+}
+
 function gameOver() {
+    nextLevelButton.style.display = 'none';
+    // Remove the existing event listener before adding a new one
+    gameOverButton.removeEventListener('click', () => { reset(); lockGame = false; });
+    gameOverButton.addEventListener('click', () => { reset(); lockGame = false; });
+    gameOverButton.innerText = 'Restart';
+    gameOverButton.style.display = 'block';
+
     // Show the game over message
     overlay.style.display = 'flex';
     levelCompleteText.innerText = 'Game Over!';
@@ -266,18 +239,6 @@ function isLevelFinished(block) {
             }
         }
 
-        let levelNumber = parseInt(level.replace('level', '')); // strip the 'level' string and convert to number
-        levelNumber++; // increment the level number
-        nextLevel = levels['level' + levelNumber];
-        
-        // Remove the existing event listener before adding a new one
-        nextLevelButton.removeEventListener('click', loadNextLevel);
-        nextLevelButton.addEventListener('click', loadNextLevel);
-
-        // Show the overlay when all blocks are gone
-        overlay.style.display = 'flex';
-        levelCompleteText.innerText = 'Level Complete!';
-
         return true;
     }
 
@@ -285,11 +246,39 @@ function isLevelFinished(block) {
 }
 
 let lastBlock = null;
+let lockGame = false;
 
-function updatePlayerPosition() {
+function shouldUpdatePlayerPosition() {
+    let currentBlock = blocks[Math.round(player.player?.position.x)][Math.round(player.player?.position.z)];
 
-    let currentBlock = blocks[Math.round(player.position.x)][Math.round(player.position.z)];
+    const complete = isLevelFinished(currentBlock);
 
+    if (!lockGame) {
+        if (complete) {
+            gameOverButton.style.display = 'none';
+            nextLevelButton.style.display = 'block';
+            lockGame = true;
+            // Remove the existing event listener before adding a new one
+            nextLevelButton.removeEventListener('click', () => { loadLevel(); lockGame = false; });
+            nextLevelButton.addEventListener('click', () => { loadLevel(); lockGame = false; });
+
+            // Show the overlay when all blocks are gone
+            overlay.style.display = 'flex';
+            levelCompleteText.innerText = 'Level Complete!';
+        } else if (!complete && !canMove(currentBlock)) {
+            lockGame = true;
+            gameOver();
+            return;
+        } else {
+            lockGame = false;
+            updatePlayerPosition(currentBlock);
+        }
+    }
+
+
+}
+
+function updatePlayerPosition(currentBlock) {
     if (currentBlock !== lastBlock) {
         if (lastBlock) {
             handleMoveOffBlock(lastBlock);
@@ -299,30 +288,18 @@ function updatePlayerPosition() {
         }
         lastBlock = currentBlock;
     }
-
-    const complete = isLevelFinished(currentBlock);
-
-    if (complete) {
-        levelCompleteText.innerText = 'Level Complete!';
-        overlay.style.display = 'flex';
-    }
-
-
-    if (!complete && !canMove(lastBlock)) {
-        gameOver();
-        return;
-    }
 }
 
 
 // Render loop
 function animate() {
     requestAnimationFrame(animate);
-    updatePlayerPosition();
+    shouldUpdatePlayerPosition();
     TWEEN.update();
     renderer.render(scene, camera);
 }
 createBlocks(level1);
-toStart();
+const player = new Player(scene, blocks);
+player.toStart(level1);
 animate();
 
