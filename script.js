@@ -1,286 +1,219 @@
 import * as THREE from 'three';
-import { TWEEN } from 'https://unpkg.com/three@0.139.0/examples/jsm/libs/tween.module.min.js';
-import { level1, level2, level3, level4 } from './levels.js';
-import { SceneSetup, CameraSetup, LightSetup } from './setup.js';
-import { Player } from './player.js';
+import * as CANNON from 'cannon-es';
 
-const levels = [level1, level2, level3, level4];
-let level = 0;
-let currentLevel = levels[level];
+let stack = [];
+let overhangs = [];
+const boxHeight = 1;
 
-let overlay = document.getElementById('overlay');
-let button = document.getElementById('button');
-let info = document.getElementById('info');
+function cutBox(topLayer, overlap, size, delta) {
+    const direction = topLayer.direction;
+    const newWidth = direction === 'x' ? overlap : topLayer.width;
+    const newDepth = direction === 'z' ? overlap : topLayer.depth;
 
-// Initialize Three.js
-const sceneSetup = new SceneSetup();
-const scene = sceneSetup.scene;
-const renderer = sceneSetup.renderer;
-const cameraSetup = new CameraSetup(scene);
-const camera = cameraSetup.camera;
-const lightSetup = new LightSetup(scene);
-const textureLoader = new THREE.TextureLoader();
+    // update metadata
+    topLayer.width = newWidth;
+    topLayer.depth = newDepth;
 
-function loadLevel() {
-    // Clear the previous level
-    for (let i = scene.children.length - 1; i >= 0; i--) {
-        if (scene.children[i].userData.type) {
-            scene.remove(scene.children[i]);
-        }
-    }
+    // update threeJS model
+    topLayer.threejs.scale[direction] = overlap / size;
+    topLayer.threejs.position[direction] -= delta / 2;
 
-    // Check if there are more levels
-    if (level < levels.length) {
-        // Increment level to move on to the next level
-        level++;
-        const newLevel = levels[level];
-        console.log('loadLevel', newLevel);
-        currentLevel = newLevel;
-        overlay.style.display = 'none';
+    // update cannonJS model
+    topLayer.cannonjs.position[direction] -= delta / 2;
 
-        createBlocks(currentLevel);
-        player.toStart(currentLevel);
+    // replace shape for smalelr one (cannonjs cant scale shape)
+    const shape = new CANNON.Box(new CANNON.Vec3(newWidth / 2, boxHeight / 2, newDepth / 2));
+    topLayer.cannonjs.shapes = [];
+    topLayer.cannonjs.addShape(shape);
+}
+
+function addOverhang(x, z, width, depth) {
+    const y = boxHeight * (stack.length - 1);
+    const overhang = generateBox(x, y, z, width, depth, true);
+    overhangs.push(overhang);
+}
+
+
+function addLayer(x, z, width, depth, direction) {
+    const y = boxHeight * stack.length;
+
+    const layer = generateBox(x, y, z, width, depth, false);
+    layer.direction = direction;
+
+    stack.push(layer);
+}
+
+function generateBox(x, y, z, width, depth, falls) {
+    //ThreeJS
+    const geometry = new THREE.BoxGeometry(width, boxHeight, depth);
+    const color = new THREE.Color(`hsl(${30 + stack.length * 4}, 100%, 50%)`);
+    const material = new THREE.MeshLambertMaterial({ color });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+
+    scene.add(mesh);
+
+
+    //CannonJS
+    const shape = new CANNON.Box(new CANNON.Vec3(width / 2, boxHeight / 2, depth / 2));
+    let mass = falls ? 5 : 0;
+    mass *= width / originalBoxSize; // reduce mass based on size
+    mass *= depth / originalBoxSize; // reduce mass based on size
+    const body = new CANNON.Body({ mass, shape });
+    body.position.set(x, y, z);
+    world.addBody(body);
+
+    return {
+        threejs: mesh,
+        cannonjs: body,
+        width,
+        depth
+    };
+}
+
+
+
+let gameStarted = false;
+
+window.addEventListener('click', () => {
+    if (!gameStarted) {
+        renderer.setAnimationLoop(animation);
+        gameStarted = true;
     } else {
-        console.log('No more levels');
-    }
-}
+        const topLayer = stack[stack.length - 1];
+        const previousLayer = stack[stack.length - 2];
 
-// Create grid of blocks
-const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const direction = topLayer.direction;
 
-let blocks = [];
-function createBlocks(level) {
-    console.log('createBlocks', level);
-    for (let i = 0; i < level.length; i++) {
-        let data = level[i];
-        let cube;
-        let material;
+        const delta = topLayer.threejs.position[direction] - previousLayer.threejs.position[direction];
 
+        const overhangSize = Math.abs(delta);
 
+        const size = topLayer.threejs.geometry.parameters[direction === 'x' ? 'width' : 'depth'];
 
-        if (data.type === 'start') {
-            material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+        const overlap = size - overhangSize;
 
-        } else if (data.type === 'finish') {
-            material = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        } else if (data.type === 'solid') {
-            // Load the texture from the PNG image
-            const texture = textureLoader.load(`${data.amount}.png`);
+        if (overlap > 0) {
+            cutBox(topLayer, overlap, size, delta);
 
-            // Create the material with the texture and a color underneath it
-            material = new THREE.MeshBasicMaterial({
-                map: texture, // Apply the texture
-                color: '#7becec', // Set the color underneath the texture
-                transparent: false, // Enable transparency
-            });
+            // overhang
+            const overhangShift = (overlap / 2 + overhangSize / 2) * Math.sign(delta);
+            const overhangX = direction === 'x' ? topLayer.threejs.position.x + overhangShift : topLayer.threejs.position.x;
+            const overhangZ = direction === 'z' ? topLayer.threejs.position.z + overhangShift : topLayer.threejs.position.z;
+            const overhangWidth = direction === 'x' ? overhangSize : topLayer.width;
+            const overhangDepth = direction === 'z' ? overhangSize : topLayer.depth;
+
+            addOverhang(overhangX, overhangZ, overhangWidth, overhangDepth);
+
+            // next layer
+            const nextX = direction === 'x' ? topLayer.threejs.position.x : -10;
+            const nextZ = direction === 'z' ? topLayer.threejs.position.z : -10;
+            const newWidth = topLayer.width; // New layer has the same size as the cut top layer
+            const newDepth = topLayer.depth; // New layer has the same size as the cut top layer
+            const nextDirection = direction === 'x' ? 'z' : 'x';
+
+            addLayer(nextX, nextZ, newWidth, newDepth, nextDirection);
+
         }
 
-        cube = new THREE.Mesh(geometry, material);
-        cube.position.x = data.xpos;
-        cube.position.z = data.zpos;
-        cube.userData.amount = data.amount;
-        cube.userData.touchedCount = 0;
-        cube.userData.type = data.type;
-        cube.castShadow = true;
-        cube.receiveShadow = true;
-        scene.add(cube);
 
 
-        // Store the block in the blocks array
-        if (!blocks[data.xpos]) {
-            blocks[data.xpos] = [];
-        }
-
-        blocks[data.xpos][data.zpos] = cube;
     }
+});
+
+function animation() {
+    const speed = 0.10;
+    const topLayer = stack[stack.length - 1];
+    topLayer.threejs.position[topLayer.direction] += speed;
+    topLayer.cannonjs.position[topLayer.direction] += speed;
+
+    // 4 is initial camera height 
+    if (orthographicCamera.position.y < boxHeight * (stack.length - 2) + 4) {
+        orthographicCamera.position.y += speed;
+    }
+
+    updatePhysics();
+    renderer.render(scene, orthographicCamera);
+
 }
-// Function to handle when a block is touched
-function handleMoveOntoBlock(block, prevBlock) {
-    if (prevBlock?.userData.type === 'solid' && prevBlock?.userData.touchedCount === prevBlock?.userData.amount) {
-        blocks[prevBlock.position.x][prevBlock.position.z] = null;
-    }
 
-    block.userData.touchedCount++; // Increment the touchedCount property of the block
+function updatePhysics() {
+    world.step(1 / 100);
 
+    // Copy coordinates from CannonJS to ThreeJS
+    overhangs.forEach(overhang => {
+        overhang.threejs.position.copy(overhang.cannonjs.position);
+        overhang.threejs.quaternion.copy(overhang.cannonjs.quaternion);
+    });
+}
+
+
+//ThreeJS globals
+let orthographicCamera, scene, renderer;
+
+//CannonJS globals
+let world;
+
+const originalBoxSize = 3;
+
+function init() {
+    // init CannonJS
+    world = new CANNON.World();
+    world.gravity.set(0, -10, 0);
+    world.broadphase = new CANNON.NaiveBroadphase();
+    world.solver.iterations = 40;
+
+    // init ThreeJS
+    scene = new THREE.Scene();
+
+    //foundation
+    addLayer(0, 0, originalBoxSize, originalBoxSize);
+
+    //first layer
+    addLayer(-10, 0, originalBoxSize, originalBoxSize, 'x');
+
+    //lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(10, 20, 0); // x, y, z; Highest number gets the most light
+    scene.add(directionalLight);
     
-        new TWEEN.Tween(block.position)
-            .to({ y: block.position.y - 0.2 }, 200) // Move the block down by 0.2 units over 500 milliseconds
-            .easing(TWEEN.Easing.Quadratic.Out) // Use quadratic easing for a smooth animation
-            .onComplete(() => {
-                // Move the block back up when the animation is complete
-                new TWEEN.Tween(block.position)
-                    .to({ y: block.position.y + 0.2 }, 200)
-                    .start();
-            })
-            .start();
-            if (block.userData.type === 'solid') {
-        const texture = textureLoader.load(`${block.userData.amount - block.userData.touchedCount}.png`);
 
-        block.material = new THREE.MeshBasicMaterial({
-            map: texture, // Apply the texture
-            color: '#1becec', // Set the color underneath the texture
-            transparent: false, // Enable transparency
-        });;
-        block.material.map.needsUpdate = true;
-    }
-}
-
-async function handleMoveOffBlock(block) {
-
-    // If the block has been touched the same number of times as its amount
-    if (block.userData.type === 'solid' && block.userData.touchedCount === block.userData.amount) {
-        // Create a tween for the fade out animation
-        let fadeOut = new TWEEN.Tween(block.material)
-            .to({ opacity: 0 }, 1000) // Fade out over 1 second
-            .onComplete(() => {
-                // Dispose of the geometry and material to free up memory
-                block.geometry.dispose();
-                block.material.dispose();
-
-                // Remove the block from the scene
-                scene.remove(block);
-            });
-        // Create a tween for the downward motion
-        let moveDown = await new TWEEN.Tween(block.position)
-            .to({ y: -10 }, 1000) // Move down over 1 second
-
-
-        fadeOut.start();
-        moveDown.start();
-
-    }
-}
-
-// Add an event listener for the window's resize event
-window.addEventListener('resize', onWindowResize, false);
-
-function onWindowResize() {
-    // Update the aspect ratio
+    //camera
     const aspect = window.innerWidth / window.innerHeight;
+    const width = 10;
+    const height = width / aspect;
+    orthographicCamera = new THREE.OrthographicCamera(width / -2, width / 2, height / 2, height / -2, 1, 100);
+    orthographicCamera.position.set(4, 4, 4);
+    orthographicCamera.lookAt(scene.position);
 
-    // Update the camera's properties
-    camera.left = -cameraSetup.d * aspect;
-    camera.right = cameraSetup.d * aspect;
-    camera.top = cameraSetup.d;
-    camera.bottom = -cameraSetup.d;
-    camera.updateProjectionMatrix();
-
-    // Update the renderer's size
+    //renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.render(scene, orthographicCamera);
+    document.body.appendChild(renderer.domElement);
 }
+init();
 
-function canMove(block) {
-    let x = Math.round(block.position.x);
-    let z = Math.round(block.position.z);
+window.addEventListener("resize", () => {
+    // Adjust camera
+    console.log("resize", window.innerWidth, window.innerHeight);
+    const aspect = window.innerWidth / window.innerHeight;
+    const width = 10;
+    const height = width / aspect;
 
-    // Check the blocks on all four sides
-    if (blocks[x - 1] && blocks[x - 1][z] && blocks[x - 1][z].userData.type !== 'air') return true;
-    if (blocks[x + 1] && blocks[x + 1][z] && blocks[x + 1][z].userData.type !== 'air') return true;
-    if (blocks[x][z - 1] && blocks[x][z - 1].userData.type !== 'air') return true;
-    if (blocks[x][z + 1] && blocks[x][z + 1].userData.type !== 'air') return true;
+    orthographicCamera.top = height / 2;
+    orthographicCamera.bottom = height / -2;
+    orthographicCamera.left = width / -2;
+    orthographicCamera.right = width / 2;
 
-    return false;;
-}
+    // Update the camera's aspect ratio and projection matrix
+    orthographicCamera.updateProjectionMatrix();
 
-function reset() {
-    console.log('reset');
-    // Clear the previous level
-    for (let i = scene.children.length - 1; i >= 0; i--) {
-        if (scene.children[i].userData.type) {
-            scene.remove(scene.children[i]);
-        }
-    }
-
-    // Reset the current level
-    currentLevel = levels[level];
-    overlay.style.display = 'none';
-
-    createBlocks(currentLevel);
-    player.toStart(currentLevel);
-}
-
-function gameOver() {
-    // Remove the existing event listener before adding a new one
-    button.removeEventListener('click', () => { reset(); lockGame = false; });
-    button.addEventListener('click', () => { reset(); lockGame = false; });
-    button.innerText = 'Restart';
-
-    // Show the game over message
-    overlay.style.display = 'flex';
-    info.innerText = 'Game Over!';
-}
-
-function isLevelFinished(block) {
-    if (block.userData.type === 'finish') {
-        // Check if all the other blocks are gone
-        for (let i = 0; i < blocks.length; i++) {
-            for (let j = 0; j < blocks[i].length; j++) {
-                let data = blocks[i][j];
-                if (data && data.userData.type === 'solid') {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    return false;
-}
-
-let lastBlock = null;
-let lockGame = false;
-
-function shouldUpdatePlayerPosition() {
-    let currentBlock = blocks[Math.round(player.player?.position.x)][Math.round(player.player?.position.z)];
-
-    const complete = isLevelFinished(currentBlock);
-
-    if (!lockGame) {
-        if (complete) {
-            lockGame = true;
-            // Remove the existing event listener before adding a new one
-            button.removeEventListener('click', () => { loadLevel(); lockGame = false; });
-            button.addEventListener('click', () => { loadLevel(); lockGame = false; });
-
-            // Show the overlay when all blocks are gone
-            overlay.style.display = 'flex';
-            info.innerText = 'Level Complete!';
-        } else if (!complete && !canMove(currentBlock)) {
-            lockGame = true;
-            gameOver();
-            return;
-        } else {
-            lockGame = false;
-            updatePlayerPosition(currentBlock);
-        }
-    }
-
-
-}
-
-function updatePlayerPosition(currentBlock) {
-    if (currentBlock !== lastBlock) {
-        if (lastBlock) {
-            handleMoveOffBlock(lastBlock);
-        }
-        if (currentBlock) {
-            handleMoveOntoBlock(currentBlock, lastBlock);
-        }
-        lastBlock = currentBlock;
-    }
-}
-
-
-// Render loop
-function animate() {
-    requestAnimationFrame(animate);
-    shouldUpdatePlayerPosition();
-    TWEEN.update();
-    renderer.render(scene, camera);
-}
-createBlocks(level1);
-const player = new Player(scene, blocks);
-player.toStart(level1);
-animate();
-
+    // Reset renderer
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.render(scene, orthographicCamera);
+});
